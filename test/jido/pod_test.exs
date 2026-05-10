@@ -34,6 +34,24 @@ defmodule JidoTest.PodTest do
     end
   end
 
+  defmodule RuntimeControlPlugin do
+    @moduledoc false
+    use Jido.Plugin,
+      name: "runtime_control",
+      state_key: :runtime_control,
+      actions: [],
+      schema: Zoi.object(%{})
+  end
+
+  defmodule RatePlugin do
+    @moduledoc false
+    use Jido.Plugin,
+      name: "rate",
+      state_key: :rate,
+      actions: [],
+      schema: Zoi.object(%{})
+  end
+
   defmodule ExamplePod do
     @moduledoc false
     use Jido.Pod,
@@ -58,6 +76,19 @@ defmodule JidoTest.PodTest do
         worker: %{agent: WorkerAgent, manager: :worker_nodes}
       },
       default_plugins: %{__pod__: CustomPodPlugin}
+  end
+
+  defmodule AliasPluginPod do
+    @moduledoc false
+    alias JidoTest.PodTest.{RatePlugin, RuntimeControlPlugin}
+
+    use Jido.Pod,
+      name: "pod_alias_expansion",
+      topology: %{},
+      plugins: [
+        RuntimeControlPlugin,
+        {RatePlugin, %{limit: 10}}
+      ]
   end
 
   test "use Jido.Pod wraps an agent module with a canonical topology" do
@@ -88,6 +119,29 @@ defmodule JidoTest.PodTest do
 
     assert {:ok, %{metadata: %{custom: true}}} = Pod.fetch_state(agent)
     assert {:ok, %Topology{name: "custom_plugin_pod"}} = Pod.fetch_topology(agent)
+  end
+
+  test "plugin aliases are expanded before forwarding to Jido.Agent" do
+    assert Enum.any?(AliasPluginPod.plugin_instances(), fn instance ->
+             instance.module == RuntimeControlPlugin and instance.state_key == :runtime_control
+           end)
+
+    assert Enum.any?(AliasPluginPod.plugin_instances(), fn instance ->
+             instance.module == RatePlugin and instance.config == %{limit: 10}
+           end)
+  end
+
+  test "invalid plugins option raises at compile time" do
+    assert_raise CompileError, ~r/Invalid Jido.Pod plugins: expected a list, got: false/, fn ->
+      Code.compile_string("""
+      defmodule JidoTest.PodInvalidPluginsPod do
+        use Jido.Pod,
+          name: "invalid_plugins_pod",
+          topology: %{},
+          plugins: false
+      end
+      """)
+    end
   end
 
   test "disabling the reserved __pod__ plugin raises at compile time" do

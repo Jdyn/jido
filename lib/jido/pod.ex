@@ -64,13 +64,28 @@ defmodule Jido.Pod do
     default_plugins =
       Definition.expand_and_eval_literal_option(Keyword.get(opts, :default_plugins), __CALLER__)
 
+    plugins =
+      opts
+      |> Keyword.get(:plugins, [])
+      |> Definition.expand_and_eval_literal_option(__CALLER__)
+      |> case do
+        plugins when is_list(plugins) ->
+          plugins
+
+        other ->
+          raise CompileError,
+            description: "Invalid Jido.Pod plugins: expected a list, got: #{inspect(other)}",
+            file: __CALLER__.file,
+            line: __CALLER__.line
+      end
+
     {pod_plugins, remaining_default_plugins} =
       Definition.split_pod_plugins!(default_plugins, __CALLER__)
 
     agent_opts =
       opts
       |> Keyword.delete(:topology)
-      |> Keyword.put(:plugins, pod_plugins ++ Keyword.get(opts, :plugins, []))
+      |> Keyword.put(:plugins, pod_plugins ++ plugins)
       |> then(fn resolved_opts ->
         if is_nil(remaining_default_plugins) do
           Keyword.delete(resolved_opts, :default_plugins)
